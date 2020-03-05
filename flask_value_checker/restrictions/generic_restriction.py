@@ -21,7 +21,7 @@ class GenericRestriction:
 
     def compile(self):
         for restriction in self.raw_restrictions:
-            name, vals = restriction
+            name, vals = restriction.name, restriction.params
             name, vals = self.check_and_nicefy_attribute(name, vals)
             self.compile_restriction(name, vals)
 

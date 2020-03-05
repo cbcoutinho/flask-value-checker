@@ -1,10 +1,16 @@
 import textwrap
 import string
 
-from . import restrictions
-from . import errors
+from .. import restrictions
+from .. import errors
+from . import nodes
 
+# to accept "inf" and "-inf"
 NUMBER_VALID_VALS = string.digits + "-" + "inf"
+VARIABLE_VALID_VALS = NUMBER_VALID_VALS + string.ascii_letters + "-_"
+# basically, if something cannot be parsed as a number,
+# we assume it as a variable
+VARORNUM_VALID_VALS = VARIABLE_VALID_VALS
 
 
 def make_restrictions(raw_lines: str):
@@ -18,6 +24,12 @@ def make_restrictions(raw_lines: str):
             checkers[field_name] = checker
 
     return checkers
+
+
+class Attribute:
+    def __init__(self, name, params):
+        self.name = name
+        self.params = params
 
 
 class RestrictionParser:
@@ -57,7 +69,8 @@ class RestrictionParser:
         first attribute
         """
         # ensure the first argument (i.e. type argument) has not parameters
-        type_str, type_attrs = self.attrs[0]
+        first_attr = self.attrs[0]
+        type_str, type_attrs = first_attr.name, first_attr.params
 
         if type_attrs:
             raise errors.FlaskValueCheckerSyntaxError(
@@ -121,7 +134,7 @@ class RestrictionParser:
             self.gulp_char()
 
     def set_field_name(self):
-        self.field_name = self.parse_variable()
+        self.field_name = self.parse_variable().variable
         try:
             self.curr_pos = self.raw_line.index(":")
         except:
@@ -156,7 +169,8 @@ class RestrictionParser:
         params = []
 
         if self.curr_char in string.ascii_lowercase:
-            name = self.parse_variable()
+            name = self.parse_variable().variable
+
         else:
             self.raise_syntax_error(
                 "invalid attribute name (attributes can only start with a lower case letter)"
@@ -172,7 +186,7 @@ class RestrictionParser:
             self.minus_space_gulper()
 
         if self.curr_char == "/" or self.curr_char == None or self.curr_char == "#":
-            return name, params
+            return Attribute(name, params)
         else:
             self.raise_syntax_error(
                 f"attributes must end with a '/' or, \
@@ -214,7 +228,7 @@ they should not end with a {self.curr_char}"
                     )
             else:
                 if self.curr_char in NUMBER_VALID_VALS:
-                    val = self.parse_number()
+                    val = self.parse_number().value
                 elif self.curr_char == "[":
                     val = self.parse_list()
                 else:
@@ -247,12 +261,12 @@ they should not end with a {self.curr_char}"
                     )
 
             if self.curr_char == '"' or self.curr_char == "'":
-                val = self.parse_string()
-                vals.append(val)
+                node = self.parse_string()
+                vals.append(node.value)
                 element_just_found = True
 
             elif self.curr_char in NUMBER_VALID_VALS:
-                val = self.parse_number()
+                val = self.parse_number().value
                 vals.append(val)
                 element_just_found = True
             else:
@@ -260,34 +274,41 @@ they should not end with a {self.curr_char}"
         return vals
 
     def parse_variable_or_number(self):
+        """
+        parse a variable or number,
+
+        basically, we get the value, if its parsable as a number, its a number,
+        else a variable
+        """
         var_name = ""
         while True:
             if self.curr_char is None:
                 break
 
-            if self.curr_char in string.ascii_letters + string.digits + "_-":
+            if self.curr_char in VARORNUM_VALID_VALS:
                 var_name += self.curr_char
             else:
                 break
             self.gulp_char()
 
         try:
-            var = float(var_name)
+            value = float(var_name)
+            node = nodes.NumberNode(value)
         except ValueError:
-            var = var_name
-        return var
+            node = nodes.VariableNode(var_name)
+        return node
 
     def parse_variable(self):
-        var = self.parse_variable_or_number()
-        if type(var) == str:
-            return var
+        node = self.parse_variable_or_number()
+        if isinstance(node, nodes.VariableNode):
+            return node
         else:
             self.raise_syntax_error("value should be a variable and not a number")
 
     def parse_number(self):
-        var = self.parse_variable_or_number()
-        if type(var) == float:
-            return var
+        node = self.parse_variable_or_number()
+        if isinstance(node, nodes.NumberNode):
+            return node
         else:
             self.raise_syntax_error("value should be a number and not a varible")
 
@@ -316,7 +337,8 @@ they should not end with a {self.curr_char}"
                 val += self.curr_char
 
             self.gulp_char()
-        return val
+
+        return nodes.StringNode(val)
 
     def check_starting_character(self, chars_to_check, item_type):
         if not isinstance(chars_to_check, list):
