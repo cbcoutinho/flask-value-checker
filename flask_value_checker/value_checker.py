@@ -40,7 +40,7 @@ class ValueChecker:
         check if it the parameter has been written correctly or not
         """
         if request.method in ["POST", "PUT"]:
-            return self.check_for(request.form)
+            return self.check_for({**request.form, **request.args})
         else:
             return self.check_for(request.args)
 
